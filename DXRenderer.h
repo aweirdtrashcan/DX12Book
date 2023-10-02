@@ -5,6 +5,7 @@
 #include <dxgi1_4.h>
 #include <exception>
 #include <Windows.h>
+#include "GameTimer.h"
 
 class DXRenderer
 {
@@ -19,6 +20,10 @@ private:
 	
 	static LRESULT CALLBACK MainWndProc(HWND, UINT, WPARAM, LPARAM);
 	
+	void CalculateFrameStats();
+	void Update(GameTimer& GameTimer);
+	void Draw(GameTimer& GameTimer);
+
 	void CreateDXDevice();
 	Microsoft::WRL::ComPtr<ID3D12Fence> CreateFence() throw();
 	void CheckMSAAQualitySupport();
@@ -33,6 +38,8 @@ private:
 	void SetScissor() const;
 
 private:
+	GameTimer mTimer;
+
 	SIZE_T mRtvDescriptorHeapSize = 0;
 	SIZE_T mDsvDescriptorHeapSize = 0;
 	SIZE_T mCbvSrvDescriptorHeapSize = 0;
@@ -43,6 +50,7 @@ private:
 	static constexpr UINT mBufferCount = 2;
 	UINT mCurrBackBuffer = 0;
 	HINSTANCE mhInstance = nullptr;
+	bool mAppPaused = false;
 
 	Microsoft::WRL::ComPtr<IDXGIAdapter> mAdapter;
 	Microsoft::WRL::ComPtr<ID3D12Device> mDevice;

@@ -39,7 +39,35 @@ DXRenderer::~DXRenderer()
 
 int DXRenderer::Run()
 {
-	return 0;
+	MSG msg;
+
+	mTimer.Reset();
+
+	while (msg.message != WM_QUIT)
+	{
+		// If there are Window messages then process them.
+		if (PeekMessage(&msg, mHwnd, NULL, NULL, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else
+		{
+			mTimer.Tick();
+
+			if (!mAppPaused)
+			{
+				CalculateFrameStats();
+				Update(mTimer);
+				Draw(mTimer);
+			}
+			else
+			{
+				Sleep(100);
+			}
+		}
+	}
+	return (int)msg.wParam;
 }
 
 void DXRenderer::InitWindow()
