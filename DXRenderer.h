@@ -4,7 +4,6 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <exception>
-#include <Windows.h>
 #include "GameTimer.h"
 
 class DXRenderer
@@ -13,29 +12,55 @@ public:
 	DXRenderer(HINSTANCE hInstance);
 	~DXRenderer();
 
+	void ClearCommandQueue();
+
 	int Run();
+
+	__forceinline static void Log(const char* str)
+	{
+#ifdef _DEBUG
+		static DWORD strS;
+		strS = 0;
+		for (int i = 0; str[i] != 0; i++)
+			strS++;
+
+		if (!WriteConsoleA(mStandardOutput, str, strS, NULL, NULL))
+		{
+			throw std::exception("Failed to write to console from DXRenderer::Log");
+		}
+#endif
+	}
 
 private:
 	void InitWindow();
 	
-	static LRESULT CALLBACK MainWndProc(HWND, UINT, WPARAM, LPARAM);
+	inline static LRESULT CALLBACK MainWndProc(HWND, UINT, WPARAM, LPARAM);
+	inline LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 	
-	void CalculateFrameStats();
-	void Update(GameTimer& GameTimer);
-	void Draw(GameTimer& GameTimer);
+	inline void CalculateFrameStats();
+	inline void OnResize();
+	inline void Update(const GameTimer& GameTimer);
+	inline void Draw(const GameTimer& GameTimer);
 
-	void CreateDXDevice();
-	Microsoft::WRL::ComPtr<ID3D12Fence> CreateFence() throw();
-	void CheckMSAAQualitySupport();
-	void CreateCommandObjects(bool bReset);
-	void CreateSwapChain();
-	void CreateRtvAndDsvDescriptorHeaps();
-	D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
-	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferViewByIndex(UINT index) const;
-	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
-	void CreateRenderTargetViews();
-	void SetViewport() const;
-	void SetScissor() const;
+	inline void OnMouseDown(WPARAM btnState, int x, int y);
+	inline void OnMouseUp(WPARAM btnState, int x, int y);
+	inline void OnMouseMove(WPARAM btnState, int x, int y);
+
+	inline void CreateDXDevice();
+	inline _NODISCARD Microsoft::WRL::ComPtr<ID3D12Fence> CreateFence();
+	inline void CheckMSAAQualitySupport();
+	inline void CreateCommandObjects(bool bReset);
+	inline void FlushCommandQueue();
+	inline void CreateSwapChain();
+	inline void CreateRtvAndDsvDescriptorHeaps();
+	inline D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
+	inline D3D12_CPU_DESCRIPTOR_HANDLE BackBufferViewByIndex(UINT index) const;
+	inline D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
+	inline void CreateRenderTargetViews();
+	inline void SetViewport() const;
+	inline void SetScissor() const;
+
+	inline float AspectRatio() const { return (float)mClientWidth / (float)mClientHeight; }
 
 private:
 	GameTimer mTimer;
@@ -48,9 +73,18 @@ private:
 	UINT mClientHeight = UINT_MAX;
 	UINT mMsaaCount = 1;
 	static constexpr UINT mBufferCount = 2;
+	UINT64 mCurrentFence = 0;
 	UINT mCurrBackBuffer = 0;
 	HINSTANCE mhInstance = nullptr;
+	HANDLE mEventHandle = nullptr;
+
+	static HANDLE mStandardOutput;
+
 	bool mAppPaused = false;
+	bool mMinimized = false;
+	bool mMaximized = false;
+	bool mResizing = false;
+	bool mFullscreenState = false;
 
 	Microsoft::WRL::ComPtr<IDXGIAdapter> mAdapter;
 	Microsoft::WRL::ComPtr<ID3D12Device> mDevice;
@@ -58,9 +92,11 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12CommandQueue> mCmdQueue;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> mCmdList;
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> mCmdAllocator;
+	Microsoft::WRL::ComPtr<ID3D12Fence> mFence;
 	Microsoft::WRL::ComPtr<IDXGISwapChain> mSwapchain;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mDepthDescriptorHeap;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRenderTargetViewDescriptorHeap;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mDsvHeap;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRtvHeap;
+	Microsoft::WRL::ComPtr<ID3D12Resource> mSwapchainBuffer[mBufferCount];
 	Microsoft::WRL::ComPtr<ID3D12Resource> mDepthBuffer;
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;

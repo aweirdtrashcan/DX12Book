@@ -16,7 +16,7 @@ public:
 			return (float)(((mCurrTime - mPausedTime) - mBaseTime) * mSecondsPerCount);
 		}
 	}
-	__forceinline float DeltaTime() const { return mDeltaTime; }
+	__forceinline float DeltaTime() const { return (float)mDeltaTime; }
 
 	void Reset(); // Call before message loop.
 	void Start(); // Call when unpaused.

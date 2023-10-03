@@ -1,7 +1,7 @@
 #include "GameTimer.h"
 
 #include <Windows.h>
-#include <iostream>
+#include "DXRenderer.h"
 
 #define mGetCurrTime(currTime) (QueryPerformanceCounter((LARGE_INTEGER*)&currTime))
 
@@ -17,7 +17,7 @@ void GameTimer::Reset()
 {
     if (mBaseTime != 0)
     {
-        std::cout << "[WARNING]: Calling GameTimer::Reset() more than once.\n";
+        DXRenderer::Log("[WARNING]: Calling GameTimer::Reset() more than once.\n");
     }
 
     __int64 currTime;
@@ -43,7 +43,7 @@ void GameTimer::Start()
     }
     else
     {
-        std::cout << "[WARNING]: GameTimer is not paused for you to call GameTimer::Start()\n";
+        DXRenderer::Log("[WARNING]: GameTimer is not paused for you to call GameTimer::Start()\n");
     }
 }
 
@@ -56,7 +56,7 @@ void GameTimer::Stop()
     }
     else
     {
-        std::cout << "[WARNING]: GameTimer is not running for you to call GameTimer::Stop()\n";
+        DXRenderer::Log("[WARNING]: GameTimer is not running for you to call GameTimer::Stop()\n");
     }
 }
 
