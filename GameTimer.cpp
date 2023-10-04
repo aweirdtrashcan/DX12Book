@@ -1,3 +1,7 @@
+//
+// Created by Diego on 04/10/2023.
+//
+
 #include "GameTimer.h"
 
 #include <Windows.h>
@@ -82,7 +86,7 @@ void GameTimer::Tick()
         processor goes into a power save mode or we get
         shuffled to
         another processor, then mDeltaTime can be
-        negative. 
+        negative.
     */
     if (mDeltaTime < 0.0)
         mDeltaTime = 0.0;

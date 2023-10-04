@@ -10,7 +10,7 @@
 	HRESULT hres = (x);\
 	if (FAILED(hres)) {\
 		std::stringstream oss;\
-		oss << "DirectX12 Runtime encountered an error: " << std::hex << "0x" << hres << " at:\n\n";\
+		oss << "DirectX Error: " << std::hex << "0x" << hres << " at:\n\n";\
 		oss << #x << "\n\n";\
 		UINT64 messageCount = mInfoQueue->GetNumStoredMessages();\
 		for (UINT64 i = 0; i < messageCount; i++) {\
@@ -22,7 +22,8 @@
 				oss << msg->pDescription << "\n";\
 			free((void*)msg);\
 		}\
-		throw std::exception(oss.str().c_str());\
+		if (!mHasException)\
+			mExceptionSettings.push({ "", oss.str() });\
 		mInfoQueue->ClearStoredMessages();\
 	}\
 }

@@ -4,6 +4,8 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <exception>
+#include <queue>
+#include <string>
 #include "GameTimer.h"
 
 class DXRenderer
@@ -56,21 +58,34 @@ private:
 	inline D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
 	inline D3D12_CPU_DESCRIPTOR_HANDLE BackBufferViewByIndex(UINT index) const;
 	inline D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
-	inline void CreateRenderTargetViews();
-	inline void SetViewport() const;
-	inline void SetScissor() const;
+	inline void CreateRenderTargetViews(bool bReset = true);
 
 	inline float AspectRatio() const { return (float)mClientWidth / (float)mClientHeight; }
 
+	static void __stdcall messageCallback(D3D12_MESSAGE_CATEGORY category, D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id, LPCSTR pDescription, void* pContext);
+
+	void DirectXError(const char* _s0, const char* _s1);
+
 private:
+
+	struct ExceptionSettings
+	{
+		std::string _s0;
+		std::string _s1;
+	};
+
+	std::queue<ExceptionSettings> mExceptionSettings;
+
+	bool mHasException = false;
+
 	GameTimer mTimer;
 
 	SIZE_T mRtvDescriptorHeapSize = 0;
 	SIZE_T mDsvDescriptorHeapSize = 0;
 	SIZE_T mCbvSrvDescriptorHeapSize = 0;
 	UINT m4xMsaaQuality = 0;
-	UINT mClientWidth = UINT_MAX;
-	UINT mClientHeight = UINT_MAX;
+	INT mClientWidth = INT_MAX;
+	INT mClientHeight = INT_MAX;
 	UINT mMsaaCount = 1;
 	static constexpr UINT mBufferCount = 2;
 	UINT64 mCurrentFence = 0;
@@ -88,7 +103,7 @@ private:
 
 	Microsoft::WRL::ComPtr<IDXGIAdapter> mAdapter;
 	Microsoft::WRL::ComPtr<ID3D12Device> mDevice;
-	Microsoft::WRL::ComPtr<ID3D12InfoQueue> mInfoQueue;
+	Microsoft::WRL::ComPtr<ID3D12InfoQueue1> mInfoQueue;
 	Microsoft::WRL::ComPtr<ID3D12CommandQueue> mCmdQueue;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> mCmdList;
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> mCmdAllocator;
@@ -98,6 +113,9 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRtvHeap;
 	Microsoft::WRL::ComPtr<ID3D12Resource> mSwapchainBuffer[mBufferCount];
 	Microsoft::WRL::ComPtr<ID3D12Resource> mDepthBuffer;
+
+	D3D12_VIEWPORT vp;
+	D3D12_RECT scissor;
 
 	DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DXGI_FORMAT mDepthFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;

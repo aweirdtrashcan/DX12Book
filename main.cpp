@@ -2,18 +2,19 @@
 #pragma comment(lib, "dxgi.lib")
 
 #include "DXRenderer.h"
+#include "DXException.h"
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
 	int returnValue = 0;
+	DXRenderer renderer(hInstance);
 	try
 	{
-		DXRenderer renderer(hInstance);
 		returnValue = renderer.Run();
 	}
-	catch (std::exception& e)
+	catch (DXException e)
 	{
-		MessageBoxA(nullptr, e.what(), "Exception", MB_OK | MB_ICONEXCLAMATION);
+		MessageBoxA(nullptr, e.what(), "DirectX Failed", MB_OK | MB_ICONEXCLAMATION);
 	}
 	return returnValue;
 }

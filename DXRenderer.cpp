@@ -8,6 +8,7 @@
 #include <malloc.h>
 #include <format>
 #include <windowsx.h>
+#include "DXException.h"
 
 using namespace Microsoft::WRL;
 
@@ -38,7 +39,7 @@ DXRenderer::DXRenderer(HINSTANCE hInstance)
 	CreateCommandObjects(false);
 	CreateSwapChain();
 	CreateRtvAndDsvDescriptorHeaps();
-	CreateRenderTargetViews();
+	OnResize();
 }
 
 DXRenderer::~DXRenderer()
@@ -50,7 +51,7 @@ DXRenderer::~DXRenderer()
 
 void DXRenderer::ClearCommandQueue()
 {
-	mCmdQueue->Signal(mFence.Get(), ++mCurrentFence);
+	ThrowIfFailed(mCmdQueue->Signal(mFence.Get(), ++mCurrentFence));
 	FlushCommandQueue();
 }
 
@@ -63,6 +64,17 @@ int DXRenderer::Run()
 
 	while (msg.message != WM_QUIT)
 	{
+		if (mHasException)
+		{
+			std::stringstream oss;
+			while (!mExceptionSettings.empty())
+			{
+				ExceptionSettings s = mExceptionSettings.front();
+				oss << s._s0 << s._s1 << "\n";
+				mExceptionSettings.pop();
+			}
+			throw DXException("", oss.str().c_str());
+		}
 		// If there are Window messages then process them.
 		if (PeekMessage(&msg, NULL, NULL, NULL, PM_REMOVE))
 		{
@@ -111,13 +123,13 @@ void DXRenderer::InitWindow()
 	mClientHeight = 720;
 
 	// Compute window rectangle dimensions based on requested client area dimensions.
-	RECT R = { 0, 0, (LONG)mClientWidth, (LONG)mClientHeight };
-	AdjustWindowRect(&R, WS_OVERLAPPEDWINDOW, false);
-	int width = R.right - R.left;
-	int height = R.bottom - R.top;
+	//RECT R = { 0, 0, mClientWidth, mClientHeight };
+	//AdjustWindowRect(&R, WS_OVERLAPPEDWINDOW, false);
+	//int width = R.right - R.left;
+	//int height = R.bottom - R.top;
 
-	mHwnd = CreateWindowA("MainWnd", "DirectX12 Window",
-		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, 0, 0, mhInstance, this);
+	mHwnd = CreateWindowExA(WS_EX_APPWINDOW | WS_EX_CLIENTEDGE, "MainWnd", "DirectX12 Window",
+		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, mClientWidth, mClientHeight, 0, 0, mhInstance, this);
 	if (!mHwnd)
 	{
 		MessageBox(0, L"CreateWindow Failed.", 0, 0);
@@ -161,8 +173,12 @@ LRESULT DXRenderer::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// WM_SIZE is sent when the user resizes the window.  
 	case WM_SIZE:
 		// Save the new client area dimensions.
-		//mClientWidth = LOWORD(lParam);
-		//mClientHeight = HIWORD(lParam);
+		mClientWidth = LOWORD(lParam);
+		mClientHeight = HIWORD(lParam);
+		if (this)
+		{
+			//Log(std::format("Width: {}, Height: {}\n", mClientWidth, mClientHeight).c_str());
+		}
 		if (mDevice)
 		{
 			if (wParam == SIZE_MINIMIZED)
@@ -270,7 +286,7 @@ LRESULT DXRenderer::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			Set4xMsaaState(!m4xMsaaState);*/
 		return 0;
 	default:
-		DefWindowProc(hWnd, msg, wParam, lParam);
+		return DefWindowProc(hWnd, msg, wParam, lParam);
 	}
 
 	return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -297,6 +313,32 @@ void DXRenderer::CalculateFrameStats()
 
 void DXRenderer::OnResize()
 {
+	ClearCommandQueue();
+
+	ThrowIfFailed(mCmdAllocator->Reset());
+	ThrowIfFailed(mCmdList->Reset(mCmdAllocator.Get(), nullptr));
+
+	for (int i = 0; i < mBufferCount; i++)
+		mSwapchainBuffer[i].Reset();
+	mDepthBuffer.Reset();
+
+	mCurrBackBuffer = 0;
+	mCurrentFence = 0;
+
+	ThrowIfFailed(mSwapchain->ResizeBuffers(mBufferCount, mClientWidth, mClientHeight, mBackBufferFormat, DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING | DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
+
+	Log("Resizing called\n");
+
+	CreateRenderTargetViews(false);
+
+	ZeroMemory(&vp, sizeof(vp));
+	ZeroMemory(&scissor, sizeof(scissor));
+
+	vp.Width = (float)mClientWidth;
+	vp.Height = (float)mClientHeight;
+	vp.MaxDepth = 1.0f;
+
+	scissor = { 0, 0, mClientWidth, mClientHeight };
 }
 
 void DXRenderer::Update(const GameTimer& GameTimer)
@@ -316,14 +358,14 @@ void DXRenderer::Draw(const GameTimer& GameTimer)
 
 	mCmdList->ResourceBarrier(1u, &presentToRender);
 
-	SetViewport();
-	SetScissor();
+	mCmdList->RSSetViewports(1u, &vp);
+	mCmdList->RSSetScissorRects(1u, &scissor);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE currBack = CurrentBackBufferView();
 	D3D12_CPU_DESCRIPTOR_HANDLE depth = DepthStencilView();
 
-	FLOAT col[] = { 1.0f, 0.0f, 0.3f, 1.0f };
-	mCmdList->ClearRenderTargetView(currBack, col, 0, nullptr);
+	FLOAT col[] = { sinf(mTimer.TotalTime()), -sinf(mTimer.TotalTime()), cosf(mTimer.TotalTime()), 1.0f};
+	mCmdList->ClearRenderTargetView(currBack, col, 1, &scissor);
 	mCmdList->ClearDepthStencilView(depth, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 	D3D12_RESOURCE_BARRIER renderToPresent = {};
@@ -343,12 +385,12 @@ void DXRenderer::Draw(const GameTimer& GameTimer)
 		mCmdList.Get()
 	};
 
-	mCmdQueue->ExecuteCommandLists(std::size(cmdLists), cmdLists->GetAddressOf());
+	mCmdQueue->ExecuteCommandLists((UINT)std::size(cmdLists), cmdLists->GetAddressOf());
 
 	mCurrentFence++;
-	mCmdQueue->Signal(mFence.Get(), mCurrentFence);
+	ThrowIfFailed(mCmdQueue->Signal(mFence.Get(), mCurrentFence));
 
-	ThrowIfFailed(mSwapchain->Present(0u, 0u));
+	ThrowIfFailed(mSwapchain->Present(0u, DXGI_PRESENT_ALLOW_TEARING));
 
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % mBufferCount;
 
@@ -441,7 +483,7 @@ void DXRenderer::CreateDXDevice()
 		}
 	}*/
 
-	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_12_0;
+	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
 
 	ThrowIfFailed(D3D12CreateDevice(mAdapter.Get(), featureLevel, IID_PPV_ARGS(&mDevice)));
 
@@ -450,10 +492,11 @@ void DXRenderer::CreateDXDevice()
 #ifdef _DEBUG
 	ThrowIfFailed(mDevice.As(&mInfoQueue));
 
-	mInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-	mInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+	//mInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+	//mInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
 
-	mInfoQueue->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_EXECUTION, TRUE);
+	mInfoQueue->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_EXECUTION, FALSE);
+	mInfoQueue->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_CLEANUP, FALSE);
 
 	D3D12_MESSAGE_SEVERITY msgSeverities[] =
 	{
@@ -480,6 +523,8 @@ void DXRenderer::CreateDXDevice()
 	queueFilter.AllowList = allowList;
 
 	ThrowIfFailed(mInfoQueue->PushStorageFilter(&queueFilter));
+	DWORD v = 0;
+	ThrowIfFailed(mInfoQueue->RegisterMessageCallback(&messageCallback, D3D12_MESSAGE_CALLBACK_IGNORE_FILTERS, this, &v));
 #endif
 }
 
@@ -560,7 +605,7 @@ void DXRenderer::CreateSwapChain()
 	desc.BufferCount = mBufferCount;
 	desc.Windowed = TRUE;
 	desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+	desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING | DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
 	ThrowIfFailed(factory->CreateSwapChain(mCmdQueue.Get(), &desc, mSwapchain.GetAddressOf()));
 }
@@ -602,7 +647,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE DXRenderer::DepthStencilView() const
 	return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
-void DXRenderer::CreateRenderTargetViews()
+void DXRenderer::CreateRenderTargetViews(bool bResetCmdList)
 {
 	for (UINT i = 0; i < mBufferCount; i++)
 	{
@@ -645,12 +690,7 @@ void DXRenderer::CreateRenderTargetViews()
 		IID_PPV_ARGS(&mDepthBuffer)
 	));
 
-	D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDesc = {};
-	dsvViewDesc.Format = mDepthFormat;
-	dsvViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	dsvViewDesc.Texture2D.MipSlice = 0;
-
-	mDevice->CreateDepthStencilView(mDepthBuffer.Get(), &dsvViewDesc, DepthStencilView());
+	mDevice->CreateDepthStencilView(mDepthBuffer.Get(), nullptr, DepthStencilView());
 
 	D3D12_RESOURCE_BARRIER depthBarrier = {};
 	depthBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -658,8 +698,11 @@ void DXRenderer::CreateRenderTargetViews()
 	depthBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
 	depthBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
-	mCmdAllocator->Reset();
-	mCmdList->Reset(mCmdAllocator.Get(), nullptr);
+	if (bResetCmdList)
+	{
+		ThrowIfFailed(mCmdAllocator->Reset());
+		ThrowIfFailed(mCmdList->Reset(mCmdAllocator.Get(), nullptr));
+	}
 
 	mCmdList->ResourceBarrier(1u, &depthBarrier);
 
@@ -667,31 +710,52 @@ void DXRenderer::CreateRenderTargetViews()
 		mCmdList.Get()
 	};
 
-	mCmdList->Close();
+	ThrowIfFailed(mCmdList->Close());
 
 	mCmdQueue->ExecuteCommandLists(1u, cmdLists);
 
-	mCmdQueue->Signal(mFence.Get(), ++mCurrentFence);
+	mCurrentFence++;
+	ThrowIfFailed(mCmdQueue->Signal(mFence.Get(), mCurrentFence));
 
 	FlushCommandQueue();
 }
 
-void DXRenderer::SetViewport() const
+void DXRenderer::messageCallback(D3D12_MESSAGE_CATEGORY category, D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id, LPCSTR pDescription, void* pContext)
 {
-	D3D12_VIEWPORT vp = {};
-	vp.Height = (FLOAT)mClientHeight;
-	vp.Width = (FLOAT)mClientWidth;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	vp.TopLeftX = 0.0f;
-	vp.TopLeftY = 0.0f;
-	
-	mCmdList->RSSetViewports(1u, &vp);
+	std::stringstream oss;
+	DXRenderer* r = (DXRenderer*)pContext;
+	if (!mStandardOutput || !r) return;
+	switch (severity)
+	{
+	case D3D12_MESSAGE_SEVERITY_CORRUPTION:
+		r->DirectXError("DirectX Corruption: ", pDescription);
+		break;
+	case D3D12_MESSAGE_SEVERITY_ERROR:
+		r->DirectXError("DirectX Error: ", pDescription);
+		break;
+	case D3D12_MESSAGE_SEVERITY_WARNING:
+#ifdef _WARNINGS_AS_CRASH
+		r->DirectXError("DirectX Warning: ", pDescription);
+		break;
+#endif
+		oss << "DirectX Warning: " << pDescription << "\n";
+		Log(oss.str().c_str());
+		break;
+	case D3D12_MESSAGE_SEVERITY_INFO:
+		oss << "DirectX Info: " << pDescription << "\n";
+		//Log(oss.str().c_str());
+		break;
+	case D3D12_MESSAGE_SEVERITY_MESSAGE:
+		oss << "DirectX Message: " << pDescription << "\n";
+		//Log(oss.str().c_str());
+		break;
+	default:
+		break;
+	}
 }
 
-void DXRenderer::SetScissor() const
+void DXRenderer::DirectXError(const char* _s0, const char* _s1)
 {
-	D3D12_RECT scissor = { 0, 0, (LONG)mClientWidth, (LONG)mClientHeight };
-	
-	mCmdList->RSSetScissorRects(1u, &scissor);
+	mExceptionSettings.push({ _s0, _s1 });
+	mHasException = true;
 }
